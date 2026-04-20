@@ -141,6 +141,7 @@
     <Compile Include="Plugins\CustomApiCreateOpportunity.cs" />
     <Compile Include="Plugins\CustomAPICreateOpportunityTemp.cs" />
     <Compile Include="Plugins\CustomAPIPaymentSchdeule.cs" />
+    <Compile Include="Plugins\CustomAPIRecalculateOpportunities.cs" />
     <Compile Include="Plugins\GetAgreementData.cs" />
     <Compile Include="Plugins\OpportunitesImpactPlugin.cs" />
     <Compile Include="Plugins\OpportunityStagePlugin .cs" />
@@ -152,6 +153,7 @@
     <Compile Include="Workflows\BulkOppLineUpdateAgreementCartAction.cs" />
     <Compile Include="Workflows\CloneAgreementBatching.cs" />
     <Compile Include="Workflows\CreateOpportunity.cs" />
+    <Compile Include="Workflows\EnvVarReader.cs" />
     <Compile Include="Workflows\IBSQuantityTrueUp.cs" />
     <Compile Include="Workflows\OpportunityImpact.cs" />
   </ItemGroup>
