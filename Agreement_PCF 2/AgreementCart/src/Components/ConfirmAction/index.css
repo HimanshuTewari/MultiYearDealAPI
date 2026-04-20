@@ -1,0 +1,25 @@
+.confirm-action p {
+    margin: 0;
+}
+
+.confirm-action .dueling-buttons {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+    margin-top: .5rem;
+}
+
+.confirm-action .dueling-buttons button {
+    background: none;
+    border: 1px solid var(--hex);
+    color: var(--hex);
+    border-radius: 2px;
+    width: 100%;
+    cursor: pointer;
+}
+
+.confirm-action .dueling-buttons button:first-child {
+    border: 1px solid var(--elevation-3);
+    color: var(--text-3);
+    cursor: pointer;
+}

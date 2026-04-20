@@ -1,0 +1,166 @@
+.inventory-table-container {
+    max-height: 55vh;
+    overflow: auto;
+}
+
+.inventory-table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.inventory-table td,
+.inventory-table th {
+    background: var(--elevation-1);
+    border-bottom: 1px solid #ddd;
+    padding: 0.5rem 0.8rem;
+    transition: .2s ease-in-out;
+    vertical-align: middle;
+}
+
+.inventory-table th {
+    text-align: left;
+    background: var(--elevation-3);
+}
+
+.inventory-table thead {
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 2;
+}
+
+.inventory-table thead th {
+    white-space: no-wrap;
+}
+
+.inventory-table thead::before {
+    content: "";
+    position: absolute;
+    top: calc(100%);
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: #ddd;
+}
+
+.inventory-table .sticky-col {
+    position: -webkit-sticky;
+    position: sticky;
+    z-index: 1;
+}
+
+.inventory-table .sticky-col.left {
+    left: 0;
+}
+
+.inventory-table .sticky-col.left:before {
+    content: "";
+    position: absolute;
+    left: calc(100%);
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #ddd;
+}
+
+.inventory-table .sticky-col.right {
+    right: 0;
+}
+
+.inventory-table .sticky-col.right:before {
+    content: "";
+    position: absolute;
+    right: calc(100%);
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #ddd;
+}
+
+.inventory-table tr:hover td,
+.inventory-table tr:hover th {
+    background: var(--elevation-3);
+}
+
+.inventory-table td p {
+    margin-bottom: 0;
+}
+
+.package-component-decoration {
+    width: 30px;
+    position: relative;
+}
+
+.package-component-decoration .strike {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform:translateX(-50%);
+    width: 2px;
+    height: 100%;
+    background: #7f7f7f;
+}
+
+.package-component-decoration::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform:translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #7f7f7f;
+}
+
+.package-component-decoration::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform:translate(-50%, -50%);
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.package-decoration-inventory {
+    height: 12px;
+    width: 30px;
+    position: relative;
+}
+
+.package-decoration-inventory .strike {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform:translateX(-50%);
+    width: 2px;
+    height: 100%;
+    background: #7f7f7f;
+}
+
+.package-decoration-inventory::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform:translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #7f7f7f;
+}
+
+.package-decoration-inventory::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform:translate(-50%, -50%);
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #fff;
+}

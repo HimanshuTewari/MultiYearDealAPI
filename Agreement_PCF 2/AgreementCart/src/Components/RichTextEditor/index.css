@@ -1,0 +1,56 @@
+.rich-text-editor .editor-input {
+    border: 1px solid #D1D1D1;
+    padding: 5px;
+    min-height: 100px;
+  }
+
+  .not-editable {
+    cursor: not-allowed;
+    opacity: 0.75;
+  }
+  
+  .rich-text-editor .editor-input ul,
+  .rich-text-editor .editor-input ol {
+    padding-left: 15px;
+  }
+  
+  .rich-text-editor .editor-input p,
+  .rich-text-editor .editor-input * {
+    font-weight: 100;
+    font-family: sans-serif !important;
+  }
+  
+  .rich-text-editor .editor-input strong,
+  .rich-text-editor .editor-input strong * {
+    font-weight: bold;
+    font-family: SegoeUI-Semibold, "Segoe UI Semibold", "Segoe UI Regular", "Segoe UI", inherit !important;
+  }
+  
+  .rich-text-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    border: 1px solid #D1D1D1;
+    margin-top: -1px;
+  }
+  
+  .rich-text-toolbar button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    padding: 2px;
+    transition: .2s ease-in-out;
+    font-size: .9rem;
+  }
+  
+  .rich-text-toolbar button:hover,
+  .rich-text-toolbar button:focus {
+    background: #d1d1d1;
+  }
+  
+  .rich-text-toolbar button.heading {
+    font-family: sans-serif;
+  }

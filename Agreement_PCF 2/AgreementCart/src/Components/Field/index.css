@@ -1,0 +1,63 @@
+
+
+
+.custom-field {
+    display: inline-block;
+}
+
+.custom-field-label,
+.custom-field-value {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    text-align: var(--textAlign);
+}
+
+.custom-field-label.left,
+.custom-field-value.left {
+    justify-content: flex-start;
+}
+
+.custom-field-label.right,
+.custom-field-value.right {
+    justify-content: flex-end;
+}
+
+.custom-field-label.center,
+.custom-field-value.center {
+    justify-content: center;
+}
+
+
+.custom-field {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: .125rem;
+}
+
+.custom-field.horizontal {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.25rem;
+}
+
+.custom-field-label {
+    font-size: .9rem;
+    font-weight: normal;
+}
+
+.custom-field-value {
+    font-size: 1rem;
+    font-weight: normal;
+}
+
+
+.custom-field.small .custom-field-label {
+    font-size: .7rem;
+}
+
+.custom-field.small .custom-field-value {
+    font-size: .9rem;
+}

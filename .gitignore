@@ -1,0 +1,52 @@
+# -----------------------------------------------------------------------------
+# Agilitek Code — .gitignore
+# -----------------------------------------------------------------------------
+
+# ---- C# build artifacts ----
+[Bb]in/
+[Oo]bj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+[Dd]ebugPublic/
+[Bb]ld/
+[Ll]og/
+[Ll]ogs/
+x64/
+x86/
+packages/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ---- Visual Studio ----
+.vs/
+*.VisualState.xml
+TestResult.xml
+[Aa]pp_[Dd]ata/
+[Aa]pp_[Dd]ata.*
+
+# ---- Code signing / key material ----
+# These contain private keys — never commit to a shared repo. Each developer
+# has their own strong-name key. Restore locally before building.
+*.pfx
+*.snk
+
+# ---- PCF / Node ----
+node_modules/
+out/
+npm-debug.log
+*.log
+
+# ---- Large binary artifacts ----
+# The pcf bundle and legacy GetAgreementData zips can get multi-hundred-MB.
+*.zip
+
+# ---- IDE / OS cruft ----
+.idea/
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

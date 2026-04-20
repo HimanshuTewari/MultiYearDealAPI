@@ -1,0 +1,7 @@
+.rate-card-card {
+    background: var(--elevation-3);
+    padding: .75rem;
+    border-radius: 2px;
+    display: flex;
+    gap: 2rem;
+}

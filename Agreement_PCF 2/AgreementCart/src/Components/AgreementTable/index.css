@@ -1,0 +1,212 @@
+.field-container.grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-gap: 1.25rem;
+}
+
+.field-container.column {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.agreement-table td,  .agreement-table th:not(.agreement-table-head-header) {
+    border-bottom: 1px solid #ddd;
+    border-right: 1px solid #ddd;
+}
+
+.agreement-table th {
+    position: relative;
+}
+
+.agreement-table {
+    border-collapse: collapse;
+}
+
+.agreement-table-container {
+    border: 1px solid #ddd;
+    max-height: 55vh;
+    overflow: auto;
+    position: relative;
+}
+
+.agreement-table td,
+.agreement-table th {
+    background: var(--elevation-1);
+    vertical-align: middle;
+}
+
+.agreement-table td.highlight,
+.agreement-table th.highlight {
+    background: #EFF7FF;
+}
+
+.agreement-table thead th {
+    background: var(--elevation-3);
+}
+
+.agreement-table thead {
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 2;
+}
+
+.agreement-table thead::before {
+    content: "";
+    position: absolute;
+    top: calc(100%);
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: #ddd;
+}
+
+.agreement-table .sticky-col {
+    position: -webkit-sticky;
+    position: sticky;
+    z-index: 1;
+}
+
+.agreement-table .sticky-col.left {
+    left: 0;
+}
+
+.agreement-table .sticky-col.left:before {
+    content: "";
+    position: absolute;
+    left: calc(100%);
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #ddd;
+}
+
+.agreement-table .sticky-col.right {
+    right: 0;
+}
+
+.agreement-table .sticky-col.right:before {
+    content: "";
+    position: absolute;
+    right: calc(100%);
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #ddd;
+}
+
+.product-table-cell > div:first-of-type button[disabled]{
+    opacity: 0.25;
+    cursor: not-allowed;
+}
+
+.dummy-column {
+    height: inherit;
+}
+
+.dummy-column div {
+    height: 100%;
+    background: #fff;
+}
+
+.dummy-column.head div {
+    background: #f2f2f2;
+}
+
+.package-component-decoration {
+    width: 30px;
+    position: relative;
+}
+
+.package-component-decoration .strike {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform:translateX(-50%);
+    width: 2px;
+    height: 100%;
+    background: #7f7f7f;
+}
+
+.package-component-decoration::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform:translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #7f7f7f;
+}
+
+.package-component-decoration::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform:translate(-50%, -50%);
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.package-decoration {
+    height: 12px;
+    width: 33px;
+    position: relative;
+}
+
+.package-decoration .strike {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform:translateX(-50%);
+    width: 2px;
+    height: 100%;
+    background: #7f7f7f;
+}
+
+.package-decoration::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform:translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #7f7f7f;
+}
+
+.package-decoration::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform:translate(-50%, -50%);
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.package-decoration.decoration-footer {
+    height: 30px;
+    width: 33px;
+}
+
+.package-decoration.decoration-footer .strike {
+    height: 50%;
+}
+
+.package-decoration.decoration-footer::before,
+.package-decoration.decoration-footer::after {
+    top: 50%;
+}
+
+.unset-pseudoborder {
+    border-right: none !important;
+}

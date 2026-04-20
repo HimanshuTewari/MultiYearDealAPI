@@ -1,0 +1,29 @@
+.pagination-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.pagination-controls {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pagination-controls p {
+    font-size: .9em;
+    margin: 0;
+}
+
+.pagination-metadata {
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+}
+
+.pagination-metadata .page-size {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}

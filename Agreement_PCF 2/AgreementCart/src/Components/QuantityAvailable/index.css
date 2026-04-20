@@ -1,0 +1,51 @@
+.breakdown-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1em;
+    max-width: 400px;
+    margin: auto;
+}
+
+.breakdown-line {
+    display: flex;
+}
+
+.breakdown-line span {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+}
+
+.breakdown-line span.breakdown-val {
+    text-align: right;
+}
+
+.breakdown-line span.underline::before {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: var(--text-3);
+}
+
+.breakdown-line span.double-underline::before {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: var(--text-3);
+}
+
+.breakdown-line span.double-underline::after {
+    content: "";
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: var(--text-3);
+}
