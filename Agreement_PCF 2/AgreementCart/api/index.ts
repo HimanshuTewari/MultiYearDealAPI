@@ -1,14 +1,33 @@
 import axios from "axios";
-import { InventoryData, OpportunityData, OpportunityLineItemData, AddProductResponse, AddProductInitialResponse, AddProductBatchingResponse, AddProductEscalateResponse, AddProductFlowResult, CheckProductsAvailabilityPayload, CheckProductsAvailabilityResponse, AddProductsBatchPayload, AddProductsBatchResponse, AddProductsBatchRequestProduct, AddProductsBatchFailedProduct } from "../models";
+import {
+    InventoryData,
+    OpportunityData,
+    OpportunityLineItemData,
+    AddProductResponse,
+    AddProductInitialResponse,
+    AddProductBatchingResponse,
+    AddProductEscalateResponse,
+    AddProductFlowResult,
+    CheckProductsAvailabilityPayload,
+    CheckProductsAvailabilityResponse,
+    AddProductsBatchPayload,
+    AddProductsBatchResponse,
+    AddProductsBatchRequestProduct,
+    AddProductsBatchFailedOli,
+    AddProductsBatchOliSpec,
+    RecalculateOpportunitiesPayload,
+    RecalculateOpportunitiesResponse,
+    RecalculateOpportunitiesFailedOpp,
+} from "../models";
 import { first } from "@tiptap/core/dist/commands";
 
 const BASE_URL = window.location.origin + "/api/data/v9.0/ats_AgreementCartAction";
 const CUSTOMAPIADDPRODUCTBASE_URL = window.location.origin + "/api/data/v9.0/ats_customAPIAddProductAgreementCartAction";
 const BASE_CLONE_URL = window.location.origin + "/api/data/v9.0/ats_CloneAgreementAction";
-// New Phase C/D endpoints — keep alongside the legacy per-product flow so
-// package products and other edge cases can still fall back to it.
+// Bulk add-products + recalc flow (v3 — 20-Apr-2026).
 const CHECK_PRODUCTS_AVAILABILITY_URL = window.location.origin + "/api/data/v9.0/ats_CheckProductsAvailability";
 const ADD_PRODUCTS_BATCH_URL = window.location.origin + "/api/data/v9.0/ats_AddProductsBatch";
+const RECALCULATE_OPPORTUNITIES_URL = window.location.origin + "/api/data/v9.0/ats_RecalculateOpportunities";
 
 // export const addProduct = async (data: InventoryData, agreementId: string, seasonIds: string, packageLineId: string) => {
 //     try {
@@ -362,28 +381,32 @@ export const callCheckProductsAvailability = async (
 };
 
 /**
- * One-shot bulk create. Sends an array of products and returns whatever the
- * server processed before its soft-timeout hit. The server may return
- * `leftoverProducts` if the full list couldn't be processed inside the
- * synchronous budget — pair this call with `executeAddProductsBatchUntilComplete`
- * below to loop until the leftover list is empty.
+ * One-shot call to ats_AddProductsBatch. Accepts EITHER `products` (first
+ * call — the server expands them into OLIs and persists as many as it can
+ * inside its 90 s budget) OR `olis` (resume — the server consumes the
+ * pre-resolved specs as-is). The discriminator is which key is present.
  *
- * Each product can be a simple opp-product OR a package (IsPackage=true) with
- * a PackageComponents array. The server creates the main row + its components
- * atomically via ExecuteTransactionRequest per product.
+ * The server-side OLI commit batch size is controlled by the D365
+ * environment variable `ats_OliBatchSize` — NOT passed from the PCF.
  */
 export const callAddProductsBatch = async (
     agreementId: string,
-    products: AddProductsBatchRequestProduct[],
-    softTimeoutMs?: number
+    options: {
+        products?: AddProductsBatchRequestProduct[];
+        olis?: AddProductsBatchOliSpec[];
+        softTimeoutMs?: number;
+    }
 ): Promise<AddProductsBatchPayload | { error: any; message?: string; details?: any }> => {
     try {
-        const requestData: Record<string, any> = {
-            agreementId,
-            products: JSON.stringify(products),
-        };
-        if (typeof softTimeoutMs === "number" && softTimeoutMs > 0) {
-            requestData.softTimeoutMs = softTimeoutMs;
+        const requestData: Record<string, any> = { agreementId };
+        if (options.products && options.products.length > 0) {
+            requestData.products = JSON.stringify(options.products);
+        }
+        if (options.olis && options.olis.length > 0) {
+            requestData.olis = JSON.stringify(options.olis);
+        }
+        if (typeof options.softTimeoutMs === "number" && options.softTimeoutMs > 0) {
+            requestData.softTimeoutMs = options.softTimeoutMs;
         }
 
         const response = await axios.post<AddProductsBatchResponse>(
@@ -414,20 +437,20 @@ export const callAddProductsBatch = async (
 };
 
 export interface AddProductsBatchProgress {
-    /** Count of products processed so far across all sub-calls. */
+    /** OLIs processed so far across all sub-calls (succeeded + failed). */
     processed: number;
-    /** Total products the caller asked us to submit. */
+    /** Original total OLIs — captured from the FIRST response's totalOliCount so the progress bar stays monotonic. */
     total: number;
-    /** Products that errored mid-flight (rows already rolled back server-side). */
-    failed: AddProductsBatchFailedProduct[];
+    /** OLIs that failed mid-flight (rows already rolled back server-side). */
+    failed: AddProductsBatchFailedOli[];
     /** IDs of opp-products successfully created so far. */
     createdOpportunityProductIds: string[];
-    /** Opportunities whose lines were recalculated so far. */
+    /** Union of opportunity ids touched across all sub-calls — fed to ats_RecalculateOpportunities. */
     touchedOpportunityIds: string[];
 }
 
 export interface AddProductsBatchFinalResult extends AddProductsBatchProgress {
-    /** True iff every product was processed AND none failed. */
+    /** True iff every OLI was processed AND none failed. */
     success: boolean;
     /** The last sub-call's payload (useful for debugging). */
     lastPayload?: AddProductsBatchPayload;
@@ -458,6 +481,23 @@ export interface AddProductsBatchFinalResult extends AddProductsBatchProgress {
  *     Products that were already created in prior sub-calls stay created —
  *     their ids are in `createdOpportunityProductIds` for the UI to report.
  */
+/**
+ * Loops callAddProductsBatch until the server's leftoverOlis list is empty.
+ *
+ *   - First sub-call sends `products` and the server expands them to OLIs.
+ *   - Every subsequent sub-call sends `leftoverOlis` as-is so the server
+ *     doesn't re-expand anything — it just commits the remainder until the
+ *     soft-timeout yields again.
+ *   - Progress bar tracks `processedOliCount / totalOliCount(first-response)`.
+ *   - Adaptive chunk-halving is still present but operates on OLI-list
+ *     length during the resume phase: if the server returns zero progress,
+ *     we slice a smaller leftover back to it (trading fewer OLIs per call
+ *     for more timer checks). At chunk size 1 with N consecutive zero-
+ *     progress responses we abort cleanly with a descriptive error.
+ *
+ * OLIs that were created in earlier sub-calls stay persisted even if the
+ * loop ultimately fails — their ids are in `createdOpportunityProductIds`.
+ */
 export const executeAddProductsBatchUntilComplete = async (
     agreementId: string,
     products: AddProductsBatchRequestProduct[],
@@ -474,30 +514,50 @@ export const executeAddProductsBatchUntilComplete = async (
     const onProgress = opts?.onProgress;
     const maxZeroProgressRetries = Math.max(1, opts?.maxZeroProgressRetries ?? 3);
 
-    const total = products.length;
     const createdOpportunityProductIds: string[] = [];
     const touchedOpportunityIds: string[] = [];
-    const failed: AddProductsBatchFailedProduct[] = [];
+    const failed: AddProductsBatchFailedOli[] = [];
     let processed = 0;
+    // `total` becomes the original OLI count reported by the FIRST response.
+    // Until then (during the products→OLIs expansion call) we use the product
+    // count as a placeholder so the UI has something to display.
+    let total = products.length;
+    let firstResponseSeen = false;
     let lastPayload: AddProductsBatchPayload | undefined;
 
-    // Work queue — we re-load it from the server's leftoverProducts after
-    // every sub-call (the server may have split a chunk across multiple calls).
-    let queue: AddProductsBatchRequestProduct[] = products.slice();
-
-    // Adaptive chunk sizing. If the server yields with zero progress, we
-    // halve the chunk size and try again — the usual cause is that the
-    // pre-loop prep (bulk IBS/Rate resolution + recalc) already ate the
-    // 90 s budget, and a smaller chunk gives the server room to process
-    // at least one product before yielding.
     let currentChunkSize = initialChunkSize;
     let consecutiveZeroProgressAtMinChunk = 0;
 
-    while (queue.length > 0) {
-        const chunk = queue.slice(0, currentChunkSize);
-        const rest = queue.slice(currentChunkSize);
+    // First call: send products. After that we switch to sending OLIs from
+    // the server's leftoverOlis stream.
+    let firstCall = true;
+    let productsToSend: AddProductsBatchRequestProduct[] = products.slice();
+    let oliQueue: AddProductsBatchOliSpec[] = [];
 
-        const result = await callAddProductsBatch(agreementId, chunk, softTimeoutMs);
+    while (firstCall || oliQueue.length > 0) {
+        let thisCallInputSize: number;
+        let result: Awaited<ReturnType<typeof callAddProductsBatch>>;
+
+        if (firstCall) {
+            thisCallInputSize = productsToSend.length;
+            result = await callAddProductsBatch(agreementId, {
+                products: productsToSend,
+                softTimeoutMs,
+            });
+            firstCall = false;
+        } else {
+            // Resume path — slice the next chunk of pending OLIs.
+            const chunk = oliQueue.slice(0, currentChunkSize);
+            const rest = oliQueue.slice(currentChunkSize);
+            thisCallInputSize = chunk.length;
+            result = await callAddProductsBatch(agreementId, {
+                olis: chunk,
+                softTimeoutMs,
+            });
+            // Rebuild the queue after the call (server's leftover FIRST,
+            // then anything we held back).
+            oliQueue = rest;
+        }
 
         if ("error" in result) {
             const progress: AddProductsBatchProgress = {
@@ -516,33 +576,40 @@ export const executeAddProductsBatchUntilComplete = async (
         }
 
         lastPayload = result;
-        const thisCallProcessed = result.processedCount ?? 0;
+        const thisCallProcessed = result.processedOliCount ?? 0;
 
-        // Merge per-call results into cumulative counters.
+        if (!firstResponseSeen) {
+            total = result.totalOliCount ?? total;
+            firstResponseSeen = true;
+        }
+
+        // Merge cumulative counters.
         for (const id of result.createdOpportunityProductIds ?? [])
             createdOpportunityProductIds.push(id);
         for (const id of result.touchedOpportunityIds ?? [])
             if (!touchedOpportunityIds.includes(id)) touchedOpportunityIds.push(id);
-        for (const f of result.failedProducts ?? []) failed.push(f);
+        for (const f of result.failedOlis ?? []) failed.push(f);
 
         processed += thisCallProcessed;
 
-        // Rebuild the queue: server's leftover FIRST, then anything we held back.
-        queue = [...(result.leftoverProducts ?? []), ...rest];
+        // Prepend the server's leftover OLIs to the queue so the next call
+        // picks them up first.
+        const serverLeftover = result.leftoverOlis ?? [];
+        if (serverLeftover.length > 0) {
+            oliQueue = [...serverLeftover, ...oliQueue];
+        }
 
         onProgress?.({
             processed, total, failed,
             createdOpportunityProductIds, touchedOpportunityIds
         });
 
-        // Adaptive chunk-size policy based on whether this call made progress:
-        //   - progress made → reset failure counter; keep (or cautiously grow) chunk.
-        //   - zero progress AND leftover not smaller → halve chunk; if already at 1,
-        //     increment the failure counter. Abort only after N consecutive zero-
-        //     progress responses at the minimum chunk size.
-        const leftoverLen = result.leftoverProducts?.length ?? 0;
+        // Adaptive chunk-size policy — same as before, but "chunk.length" is
+        // now the OLI-count we sent (or the number of OLIs the server
+        // derived from the products in the first call).
+        const leftoverLen = serverLeftover.length;
         const serverMadeProgress =
-            thisCallProcessed > 0 || leftoverLen < chunk.length;
+            thisCallProcessed > 0 || leftoverLen < thisCallInputSize;
 
         if (serverMadeProgress) {
             consecutiveZeroProgressAtMinChunk = 0;
@@ -553,9 +620,6 @@ export const executeAddProductsBatchUntilComplete = async (
                     `[AddProductsBatch] Server returned zero progress on chunk of ${currentChunkSize}; halving to ${nextChunkSize} and retrying.`
                 );
                 currentChunkSize = nextChunkSize;
-                // Don't increment the failure counter yet — we haven't tried
-                // the smaller chunk. Loop continues with the newly-reformed
-                // queue (server's leftover already at the front).
             } else {
                 consecutiveZeroProgressAtMinChunk += 1;
                 console.warn(
@@ -570,8 +634,8 @@ export const executeAddProductsBatchUntilComplete = async (
                         error: new Error("no_progress"),
                         errorMessage:
                             `Server made no progress on the batch after ${maxZeroProgressRetries} attempt(s) at chunk size 1. ` +
-                            `The plugin may be hitting its soft-timeout during pre-loop prep (bulk IBS/Rate resolution). ` +
-                            `Products created so far are persisted; retry remaining items or investigate plugin trace logs.`,
+                            `The plugin may be hitting its soft-timeout during pre-loop prep. ` +
+                            `OLIs created so far are persisted; check plugin trace logs for details.`,
                         errorDetails: { lastResult: result },
                     };
                 }
@@ -583,6 +647,172 @@ export const executeAddProductsBatchUntilComplete = async (
         success: failed.length === 0,
         processed, total, failed,
         createdOpportunityProductIds, touchedOpportunityIds,
+        lastPayload,
+    };
+};
+
+//#endregion
+
+
+//#region Recalculate Opportunities flow (ats_RecalculateOpportunities)
+// Called by the PCF after executeAddProductsBatchUntilComplete finishes, with
+// the union of touchedOpportunityIds accumulated across the OLI-creation loop.
+
+export const callRecalculateOpportunities = async (
+    opportunityIds: string[],
+    softTimeoutMs?: number
+): Promise<RecalculateOpportunitiesPayload | { error: any; message?: string; details?: any }> => {
+    try {
+        const requestData: Record<string, any> = {
+            opportunityIds: JSON.stringify(opportunityIds),
+        };
+        if (typeof softTimeoutMs === "number" && softTimeoutMs > 0) {
+            requestData.softTimeoutMs = softTimeoutMs;
+        }
+
+        const response = await axios.post<RecalculateOpportunitiesResponse>(
+            RECALCULATE_OPPORTUNITIES_URL,
+            requestData,
+            { headers: commonHeaders, maxBodyLength: Infinity }
+        );
+
+        const raw = response.data?.response;
+        if (!raw) {
+            return {
+                error: new Error("empty_response"),
+                message: "RecalculateOpportunities returned an empty response.",
+            };
+        }
+        try {
+            return JSON.parse(raw) as RecalculateOpportunitiesPayload;
+        } catch (parseErr: any) {
+            return {
+                error: parseErr,
+                message: "RecalculateOpportunities response was not valid JSON.",
+                details: raw,
+            };
+        }
+    } catch (error: any) {
+        return getApiError(error);
+    }
+};
+
+export interface RecalculateOpportunitiesProgress {
+    processed: number;
+    total: number;
+    failed: RecalculateOpportunitiesFailedOpp[];
+    recalculatedOpportunityIds: string[];
+}
+
+export interface RecalculateOpportunitiesFinalResult extends RecalculateOpportunitiesProgress {
+    success: boolean;
+    lastPayload?: RecalculateOpportunitiesPayload;
+    error?: any;
+    errorMessage?: string;
+    errorDetails?: any;
+}
+
+/**
+ * Loops callRecalculateOpportunities until the server's leftover list is
+ * empty. Mirrors the adaptive chunk-halving + consecutive-no-progress guard
+ * used by the OLI-creation loop so slow pre-loop prep doesn't trip the UI.
+ */
+export const executeRecalculateOpportunitiesUntilComplete = async (
+    opportunityIds: string[],
+    opts?: {
+        chunkSize?: number;
+        softTimeoutMs?: number;
+        onProgress?: (p: RecalculateOpportunitiesProgress) => void;
+        maxZeroProgressRetries?: number;
+    }
+): Promise<RecalculateOpportunitiesFinalResult> => {
+    const initialChunkSize = Math.max(1, opts?.chunkSize ?? 1000);
+    const softTimeoutMs = opts?.softTimeoutMs;
+    const onProgress = opts?.onProgress;
+    const maxZeroProgressRetries = Math.max(1, opts?.maxZeroProgressRetries ?? 3);
+
+    const total = opportunityIds.length;
+    const recalculatedOpportunityIds: string[] = [];
+    const failed: RecalculateOpportunitiesFailedOpp[] = [];
+    let processed = 0;
+    let lastPayload: RecalculateOpportunitiesPayload | undefined;
+
+    let queue = opportunityIds.slice();
+    let currentChunkSize = initialChunkSize;
+    let consecutiveZeroProgressAtMinChunk = 0;
+
+    while (queue.length > 0) {
+        const chunk = queue.slice(0, currentChunkSize);
+        const rest = queue.slice(currentChunkSize);
+
+        const result = await callRecalculateOpportunities(chunk, softTimeoutMs);
+
+        if ("error" in result) {
+            const progress: RecalculateOpportunitiesProgress = {
+                processed, total, failed, recalculatedOpportunityIds
+            };
+            onProgress?.(progress);
+            return {
+                success: false,
+                ...progress,
+                lastPayload,
+                error: result.error,
+                errorMessage: result.message,
+                errorDetails: result.details,
+            };
+        }
+
+        lastPayload = result;
+        const thisCallProcessed = result.processedCount ?? 0;
+
+        for (const id of result.recalculatedOpportunityIds ?? [])
+            recalculatedOpportunityIds.push(id);
+        for (const f of result.failedOpportunities ?? []) failed.push(f);
+
+        processed += thisCallProcessed;
+
+        // Rebuild queue: server's leftover FIRST, then anything we held back.
+        queue = [...(result.leftoverOpportunityIds ?? []), ...rest];
+
+        onProgress?.({
+            processed, total, failed, recalculatedOpportunityIds
+        });
+
+        const leftoverLen = result.leftoverOpportunityIds?.length ?? 0;
+        const serverMadeProgress =
+            thisCallProcessed > 0 || leftoverLen < chunk.length;
+
+        if (serverMadeProgress) {
+            consecutiveZeroProgressAtMinChunk = 0;
+        } else if (currentChunkSize > 1) {
+            const nextChunkSize = Math.max(1, Math.floor(currentChunkSize / 2));
+            console.warn(
+                `[RecalculateOpportunities] Zero progress on chunk of ${currentChunkSize}; halving to ${nextChunkSize}.`
+            );
+            currentChunkSize = nextChunkSize;
+        } else {
+            consecutiveZeroProgressAtMinChunk += 1;
+            console.warn(
+                `[RecalculateOpportunities] Zero progress at chunk size 1 (attempt ${consecutiveZeroProgressAtMinChunk}/${maxZeroProgressRetries}).`
+            );
+            if (consecutiveZeroProgressAtMinChunk >= maxZeroProgressRetries) {
+                return {
+                    success: false,
+                    processed, total, failed, recalculatedOpportunityIds,
+                    lastPayload,
+                    error: new Error("no_progress"),
+                    errorMessage:
+                        `Server made no progress on opportunity recalc after ${maxZeroProgressRetries} attempt(s) at chunk size 1. ` +
+                        `Opportunities recalculated so far are persisted.`,
+                    errorDetails: { lastResult: result },
+                };
+            }
+        }
+    }
+
+    return {
+        success: failed.length === 0,
+        processed, total, failed, recalculatedOpportunityIds,
         lastPayload,
     };
 };

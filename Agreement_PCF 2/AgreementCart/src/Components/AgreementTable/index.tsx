@@ -30,9 +30,10 @@ import {
     updateOpportunityLineItem,
     getAvailableSeasonsByProduct,
     cloneAgreement,
-    // Bulk add-products flow (v2 — 17-Apr-2026)
+    // Bulk add-products flow (v3 — 20-Apr-2026: OLI-level + separate recalc)
     callCheckProductsAvailability,
     executeAddProductsBatchUntilComplete,
+    executeRecalculateOpportunitiesUntilComplete,
 } from "../../../api";
 import type {
     AddProductsBatchRequestProduct,
@@ -662,17 +663,22 @@ export default function AgreementTable({
                 );
             }
 
-            // 3. Loop ats_AddProductsBatch with leftover-driven pagination.
+            // 3. Phase 1 — OLI creation loop. The backend expands products →
+            // OLIs on the first call and returns leftoverOlis when the soft-
+            // timeout fires; the helper loops until the leftover list is empty.
+            // The first response's totalOliCount is what the progress bar uses
+            // as its denominator, so the percentage stays monotonic.
             setSubmitProgressText(`Adding ${bulkRequest.length} product(s)…`);
 
-            const final = await executeAddProductsBatchUntilComplete(
+            const oliPhase = await executeAddProductsBatchUntilComplete(
                 agreementId,
                 bulkRequest,
                 {
-                    // Smaller chunk = smoother progress bar; larger chunk =
-                    // fewer HTTP round-trips. 25 is a good sweet spot in a
-                    // sandbox — bump to 100 once latency numbers are known.
-                    chunkSize: 25,
+                    // Chunk size here governs how many OLI specs the PCF sends
+                    // per HTTP call during resume. The server-side timer
+                    // granularity (how many OLIs per timer check) is governed
+                    // separately by the ats_OliBatchSize env variable.
+                    chunkSize: 50,
                     onProgress: (p) => {
                         const pct =
                             p.total > 0
@@ -680,7 +686,7 @@ export default function AgreementTable({
                                 : 0;
                         setSubmitProgress(pct);
                         setSubmitProgressText(
-                            `${p.processed} of ${p.total} product(s) added (${pct}%)${
+                            `${p.processed} of ${p.total} product line item(s) created (${pct}%)${
                                 p.failed.length > 0 ? ` — ${p.failed.length} failed` : ""
                             }`
                         );
@@ -688,41 +694,87 @@ export default function AgreementTable({
                 }
             );
 
-            // 4. Report back to the user. Partial successes ARE persisted in D365
-            // (per-product transaction atomicity); the UI makes this explicit so
-            // the user knows what to retry.
-            if (final.error || final.errorMessage) {
-                console.error("AddProductsBatch loop error:", final);
+            if (oliPhase.error || oliPhase.errorMessage) {
+                console.error("AddProductsBatch loop error:", oliPhase);
                 setNotification(
-                    final.errorMessage || "Bulk add encountered a transport error.",
+                    oliPhase.errorMessage || "Bulk add encountered a transport error.",
                     "error"
                 );
-            } else if (final.failed.length > 0) {
-                const firstFailReason = final.failed[0]?.reason ?? "unknown error";
+                // OLIs created in earlier sub-calls are persisted. Leave them
+                // in D365 but do NOT run the recalc loop — the user should
+                // investigate before we recompute totals on a partial state.
+                setIsSubmittingProducts(false);
+                return;
+            }
+
+            // 4. Phase 2 — opportunity recalculation. Runs ats_RecalculateOpportunities
+            // against the union of opportunities touched by Phase 1, with its own
+            // soft-timeout + leftover loop.
+            if (oliPhase.touchedOpportunityIds.length > 0) {
+                setSubmitProgressText(
+                    `Finalising — recalculating 0 of ${oliPhase.touchedOpportunityIds.length} opportunit${
+                        oliPhase.touchedOpportunityIds.length === 1 ? "y" : "ies"
+                    }…`
+                );
+
+                const recalcPhase = await executeRecalculateOpportunitiesUntilComplete(
+                    oliPhase.touchedOpportunityIds,
+                    {
+                        chunkSize: 25,
+                        onProgress: (p) => {
+                            // Progress bar already at 100% from Phase 1 — use text only.
+                            setSubmitProgressText(
+                                `Finalising — recalculating ${p.processed} of ${p.total} opportunit${
+                                    p.total === 1 ? "y" : "ies"
+                                }${p.failed.length > 0 ? ` — ${p.failed.length} failed` : ""}…`
+                            );
+                        },
+                    }
+                );
+
+                if (recalcPhase.error || recalcPhase.errorMessage) {
+                    console.error("RecalculateOpportunities loop error:", recalcPhase);
+                    setNotification(
+                        recalcPhase.errorMessage ||
+                            "Opportunity recalculation encountered a transport error.",
+                        "warning"
+                    );
+                } else if (recalcPhase.failed.length > 0) {
+                    const firstReason = recalcPhase.failed[0]?.reason ?? "unknown error";
+                    setNotification(
+                        `OLIs created. ${recalcPhase.failed.length} opportunity recalc(s) failed (first: ${firstReason}).`,
+                        "warning"
+                    );
+                }
+            }
+
+            // 5. Final user-facing toast + staging cleanup.
+            if (oliPhase.failed.length > 0) {
+                const firstFailReason = oliPhase.failed[0]?.reason ?? "unknown error";
                 setNotification(
-                    `Added ${final.createdOpportunityProductIds.length} opp-product(s); ${final.failed.length} product(s) failed (first: ${firstFailReason}).`,
+                    `Created ${oliPhase.createdOpportunityProductIds.length} line item(s); ${oliPhase.failed.length} failed (first: ${firstFailReason}).`,
                     "warning"
                 );
             } else {
                 setNotification(
-                    `Successfully added ${final.createdOpportunityProductIds.length} opp-product(s).`,
+                    `Successfully added ${oliPhase.createdOpportunityProductIds.length} line item(s).`,
                     "success"
                 );
             }
 
-            // Clear staging + close modal only when EVERYTHING succeeded; otherwise
-            // keep the failed products staged so the user can retry them.
-            if (final.success) {
+            // Clear staging + close modal only if everything succeeded; else
+            // keep the products whose OLIs failed so the user can retry them.
+            if (oliPhase.success) {
                 setSelectedProducts([]);
                 setInventoryModalOpen(false);
-            } else if (final.failed.length > 0) {
-                const failedIds = new Set(final.failed.map((f) => f.productId));
+            } else {
+                const failedProductIds = new Set(oliPhase.failed.map((f) => f.productId));
                 setSelectedProducts((prev) =>
-                    prev.filter((p) => failedIds.has(p.ProductId))
+                    prev.filter((p) => failedProductIds.has(p.ProductId))
                 );
             }
 
-            // 5. Single refresh at the end.
+            // 6. Single refresh at the end.
             await handleUpdateView();
         } catch (error) {
             console.error("handleSubmitSelectedProducts error:", error);

@@ -137,25 +137,52 @@ export type AddProductsBatchErrorCode =
     | "transaction_failed"
     | "input_invalid";
 
-/** Individual per-product failure surfaced by the backend. */
-export interface AddProductsBatchFailedProduct {
+/** Individual per-OLI failure surfaced by the backend. */
+export interface AddProductsBatchFailedOli {
+    oliId: string;
     productId: string;
     reason: string;
+}
+
+/**
+ * Pre-resolved OLI specification the backend produces on the first call
+ * (via the `products` input) and consumes on resume calls (via the `olis`
+ * input). Every field is already resolved — the backend does NO further
+ * lookups on resume; it just maps each spec to a Create (or a batched
+ * CreateMultiple).
+ */
+export interface AddProductsBatchOliSpec {
+    oliId: string;                     // pre-assigned Guid (string form)
+    opportunityId: string;
+    productId: string;
+    ibsId: string;
+    rateId: string;
+    rateType: number;                  // 114300000 (Season) | 114300001 (Individual)
+    qtyUnits: number;
+    qtyEvents: number;
+    rate: number;
+    hardCost: number;
+    productionCost: number;
+    description?: string | null;
+    uomId?: string | null;
+    agreementOppProductTag?: string | null;
+    packageLineItemOliId?: string | null;   // parent OLI's pre-assigned id; null for non-components
 }
 
 export interface AddProductsBatchPayload {
     success: boolean;
     agreementId: string;
+    /** OLIs processed during THIS call (succeeded + failed). */
+    processedOliCount: number;
+    /** Total OLIs the backend received as input for THIS call. PCF captures this from the first response and uses it as the stable progress total. */
+    totalOliCount: number;
     createdOpportunityProductIds: string[];
+    /** Per-OLI errors — rolled back on the server. */
+    failedOlis: AddProductsBatchFailedOli[];
+    /** OLI specs not processed in this call due to soft-timeout; resend as-is on the next call. */
+    leftoverOlis: AddProductsBatchOliSpec[];
+    /** Opportunities that received OLIs in THIS call — PCF unions these across the loop and feeds them to ats_RecalculateOpportunities. */
     touchedOpportunityIds: string[];
-    /** Products processed during THIS call (succeeded + failed). */
-    processedCount: number;
-    /** Total ProductRequests the backend received in THIS call. */
-    totalCount: number;
-    /** Requests not processed in this call due to soft-timeout; resend as-is. */
-    leftoverProducts: AddProductsBatchRequestProduct[];
-    /** Per-product errors — rows are already rolled back on the server. */
-    failedProducts: AddProductsBatchFailedProduct[];
     message?: string;
     errorCode?: AddProductsBatchErrorCode;
 }
@@ -196,6 +223,41 @@ export interface AddProductsBatchRequestProduct extends AddProductsBatchProductF
      * "group by tag" reports keep working. If omitted the backend generates one.
      */
     AgreementOpportunityProductTag?: string;
+}
+
+//#endregion
+
+
+//#region Recalculate Opportunities flow (ats_RecalculateOpportunities)
+// Separate endpoint called by the PCF after ats_AddProductsBatch finishes.
+// Handles opportunity totals recalc with the same soft-timeout + leftover
+// pattern the batch-add uses.
+
+export type RecalculateOpportunitiesErrorCode =
+    | "input_invalid"
+    | "recalc_failed";
+
+export interface RecalculateOpportunitiesFailedOpp {
+    opportunityId: string;
+    reason: string;
+}
+
+export interface RecalculateOpportunitiesPayload {
+    success: boolean;
+    processedCount: number;
+    totalCount: number;
+    recalculatedOpportunityIds: string[];
+    leftoverOpportunityIds: string[];
+    failedOpportunities: RecalculateOpportunitiesFailedOpp[];
+    message?: string;
+    errorCode?: RecalculateOpportunitiesErrorCode;
+}
+
+export interface RecalculateOpportunitiesResponse {
+    response?: string;
+    error?: any;
+    message?: string;
+    details?: string;
 }
 //#endregion
 
